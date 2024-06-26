@@ -1,16 +1,20 @@
+#include <thread>
+
 #include "execution_units/execution.hpp"
 #include "manager/manager.hpp"
 
 int main() {
   Buffer_Manager buffer{0, 0, 0};
 
-  for (int i = 0; i < 10; i++) {
-    readChunk(buffer);
-  }
+  std::thread Reader(readChunk, std::ref(buffer), BLOCK_SIZE);
 
-  for (int i = 0; i < 10; i++) {
-    entry(buffer);
-  }
+  std::thread EUs(entry, std::ref(buffer));
+
+  std::thread Print(printBufferManager, std::ref(buffer));
+
+  Reader.join();
+  EUs.join();
+  Print.join();
 
   return 0;
 }

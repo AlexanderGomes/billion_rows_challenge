@@ -1,18 +1,35 @@
 #include "execution.hpp"
 
-#include <limits>
-#include <string>
-
 int next_block_id = 1;
 
 void entry(Buffer_Manager& buffer_manager) {
-  auto it = buffer_manager.hash_map.find(next_block_id);
+  while (true) {
+    std::mutex mtx;
+    std::unique_lock<std::mutex> lck(mtx);
 
-  if (it != buffer_manager.hash_map.end()) {
-    std::vector<char>& block = it->second;
-    parsing(block);
+    buffer_manager.EU_start.wait(lck, [&buffer_manager] {
+      return buffer_manager.num_blocks_in_memory >= EU_MIN_BLOCKS;
+    });
+
+    auto it = buffer_manager.hash_map.find(next_block_id);
+
+    if (it != buffer_manager.hash_map.end()) {
+      std::vector<char>& block = it->second;
+      parsing(block);
+
+      buffer_manager.hash_map.erase(it);
+
+      buffer_manager.mtx.lock();
+      buffer_manager.num_blocks_in_memory--;
+      buffer_manager.mtx.unlock();
+    }
+
+    if (buffer_manager.num_blocks_in_memory == 1) {
+      buffer_manager.need_data.notify_one();
+    }
+    
+    next_block_id++;
   }
-  next_block_id++;
 }
 
 std::string broken_station_name;
@@ -28,15 +45,13 @@ void parsing(std::vector<char>& block) {
   if (!broken_station_name.empty()) {
     current_field = broken_station_name;
     broken_station_name.clear();
-    std::cout << current_field << "current broken name" << '\n';
   }
 
   if (!broken_temperature_str.empty()) {
     current_field = broken_temperature_str;
     station_name = last_cycle_name;
     broken_temperature_str.clear();
-    std::cout << "current broken temp belongs: " << station_name << '\n';
-    std::cout << current_field << "current broken temp\n";
+    last_cycle_name.clear();
   }
 
   for (int i = 0; i < block.size(); i++) {
@@ -67,9 +82,8 @@ void parsing(std::vector<char>& block) {
   computation(stations);
 }
 
+// min // mean // max
+// sorted inputs
 void computation(std::vector<Station>& stations) {
-  for (const Station& station : stations) {
-    std::cout << "Name: " << station.name
-              << ", Temperature: " << station.temperature << std::endl;
-  }
+  std::cout << "next_block_id: " << next_block_id << '\n' << std::endl;
 }
